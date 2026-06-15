@@ -15,6 +15,7 @@ from dataclasses import dataclass, field
 import numpy as np
 import pandas as pd
 from scipy import stats
+from tqdm import tqdm
 
 # ----------------------------------------------------------------------------
 # データ生成
@@ -40,13 +41,15 @@ class DataConfig:
     n_source: int = 1000
     n_target: int = 1000
     shift: float = 0.0
-    n_numeric: int = 3
-    n_categorical: int = 2
+    n_numeric: int = 100
+    n_categorical: int = 20
     n_categories: int = 4
     seed: int | None = None
 
 
-def _make_categorical_probs(n_categories: int, shift: float, rng: np.random.Generator) -> np.ndarray:
+def _make_categorical_probs(
+    n_categories: int, shift: float, rng: np.random.Generator
+) -> np.ndarray:
     """カテゴリの基準確率を、shift に応じて偏らせた確率に変換する。"""
     base = np.full(n_categories, 1.0 / n_categories)
     if shift == 0.0:
@@ -75,7 +78,9 @@ def generate_data(config: DataConfig) -> tuple[pd.DataFrame, pd.DataFrame]:
         loc = rng.uniform(-2.0, 2.0)
         scale = rng.uniform(0.5, 2.0)
         source[f"num_{i}"] = rng.normal(loc, scale, config.n_source)
-        target[f"num_{i}"] = rng.normal(loc + config.shift * scale, scale, config.n_target)
+        target[f"num_{i}"] = rng.normal(
+            loc + config.shift * scale, scale, config.n_target
+        )
 
     # カテゴリ特徴量: target はカテゴリ確率を偏らせる
     categories = np.arange(config.n_categories)
@@ -103,27 +108,6 @@ class DriftResult:
     per_feature: pd.DataFrame = field(default_factory=pd.DataFrame)
 
 
-def _chisquare_pvalue(
-    src: np.ndarray, tgt: np.ndarray, categories: np.ndarray
-) -> float:
-    """2 標本のカテゴリ分布をカイ二乗検定し p 値を返す。
-
-    source/target のカテゴリ度数を 2 行の分割表にまとめ、独立性の
-    カイ二乗検定 (chi2_contingency) を行う。source・target がともに
-    ランダム標本である点が正しく検定に反映される。
-    """
-    src_counts = np.array([(src == c).sum() for c in categories], dtype=float)
-    tgt_counts = np.array([(tgt == c).sum() for c in categories], dtype=float)
-
-    table = np.vstack([src_counts, tgt_counts])
-    # どちらの標本にも全く現れないカテゴリ(列和 0)は検定不能なので除外
-    table = table[:, table.sum(axis=0) > 0]
-    if table.shape[1] < 2:
-        return 1.0
-    _, p, _, _ = stats.chi2_contingency(table)
-    return float(p)
-
-
 def detect_drift(
     source: pd.DataFrame,
     target: pd.DataFrame,
@@ -141,14 +125,15 @@ def detect_drift(
     for col in source.columns:
         src = source[col].to_numpy()
         tgt = target[col].to_numpy()
-
         if pd.api.types.is_float_dtype(source[col]):
-            stat, p = stats.ks_2samp(src, tgt)
-            test = "ks_2samp"
+            stat, p = stats.ks_2samp(src, tgt, alternative="two-sided", method="auto")
+            test = "ks"
         else:
             categories = np.unique(np.concatenate([src, tgt]))
-            p = _chisquare_pvalue(src, tgt, categories)
-            stat = np.nan
+            src_counts = np.array([(src == c).sum() for c in categories], dtype=float)
+            tgt_counts = np.array([(tgt == c).sum() for c in categories], dtype=float)
+            table = np.vstack([src_counts, tgt_counts])
+            stat, p, _, _ = stats.chi2_contingency(table)
             test = "chi2"
 
         rows.append({"feature": col, "test": test, "statistic": stat, "p_value": p})
@@ -159,7 +144,9 @@ def detect_drift(
     alpha_corrected = alpha / n_tests if n_tests else alpha
 
     # ボンフェローニ補正は「p値を n 倍」または「閾値を 1/n」のどちらでも等価
-    per_feature["p_value_corrected"] = (per_feature["p_value"] * n_tests).clip(upper=1.0)
+    per_feature["p_value_corrected"] = (per_feature["p_value"] * n_tests).clip(
+        upper=1.0
+    )
     per_feature["drifted"] = per_feature["p_value"] < alpha_corrected
 
     return DriftResult(
@@ -180,9 +167,6 @@ def evaluate(
     n_source: int = 1000,
     n_target: int = 1000,
     shift: float = 1.0,
-    n_numeric: int = 3,
-    n_categorical: int = 2,
-    n_categories: int = 4,
     alpha: float = 0.05,
     n_trials: int = 200,
     base_seed: int = 0,
@@ -197,16 +181,18 @@ def evaluate(
     true_positives = 0
     false_positives = 0
 
-    for t in range(n_trials):
+    for t in tqdm(range(n_trials)):
         null_cfg = DataConfig(
-            n_source=n_source, n_target=n_target, shift=0.0,
-            n_numeric=n_numeric, n_categorical=n_categorical,
-            n_categories=n_categories, seed=base_seed + t,
+            n_source=n_source,
+            n_target=n_target,
+            shift=0.0,
+            seed=base_seed + t,
         )
         drift_cfg = DataConfig(
-            n_source=n_source, n_target=n_target, shift=shift,
-            n_numeric=n_numeric, n_categorical=n_categorical,
-            n_categories=n_categories, seed=base_seed + 10_000 + t,
+            n_source=n_source,
+            n_target=n_target,
+            shift=shift,
+            seed=base_seed + 10000 + t,
         )
 
         s0, t0 = generate_data(null_cfg)
@@ -234,7 +220,7 @@ def evaluate(
 
 def _demo() -> None:
     print("=== 単発のドリフト検知 (shift=1.0) ===")
-    cfg = DataConfig(n_source=1000, n_target=1000, shift=1.0, seed=42)
+    cfg = DataConfig(n_source=10000, n_target=10000, shift=0.1, seed=42)
     source, target = generate_data(cfg)
     result = detect_drift(source, target, alpha=0.05)
     print(f"補正前 alpha=0.05 / 補正後 alpha={result.alpha_corrected:.4f}")
@@ -243,11 +229,10 @@ def _demo() -> None:
 
     print("=== 精度評価: shift・サンプル数を振る ===")
     rows = []
-    for n in (200, 1000):
-        for shift in (0.0, 0.1, 0.3, 0.5, 1.0):
-            rows.append(
-                evaluate(n_source=n, n_target=n, shift=shift, n_trials=200)
-            )
+    for n in [10000]:
+        for shift in (0.0, 0.05, 0.1):
+            print(f"n: {n}, shift: {shift}")
+            rows.append(evaluate(n_source=n, n_target=n, shift=shift, n_trials=100))
     summary = pd.DataFrame(rows)[
         ["n_source", "shift", "power_tpr", "false_positive_rate"]
     ]
