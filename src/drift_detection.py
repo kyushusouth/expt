@@ -133,8 +133,10 @@ def main() -> None:
     n_sim = 1000
 
     """
-    (shift, positive_rate) = (0.05, 1.0)
-    (shift, positive_rate) = (0.0, 0.043)
+    shift=0.0, positive_rate = 0.043
+    shift=0.01, positive_rate = 0.186
+    shift=0.03, positive_rate = 0.989
+    shift=0.05, positive_rate = 1.0
     """
 
     # 単発のテスト
