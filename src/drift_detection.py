@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 from scipy import stats
+from tqdm import tqdm
 
 
 def generate_data(
@@ -127,48 +128,58 @@ def main() -> None:
     n_numerical_feature = 100
     n_categorical_feature = 20
     n_category = 4
-    shift = 0.05
+    # shift = 0.0
     alpha = 0.05
     n_sim = 1000
 
+    """
+    (shift, positive_rate) = (0.05, 1.0)
+    (shift, positive_rate) = (0.0, 0.043)
+    """
+
     # 単発のテスト
-    source, target, numerical_feature_names, categorical_feature_names = generate_data(
-        seed=42,
-        n_source=n_source,
-        n_target=n_target,
-        n_numerical_feature=n_numerical_feature,
-        n_categorical_feature=n_categorical_feature,
-        n_category=n_category,
-        shift=shift,
-    )
-    is_drifted, result_per_feature = detect_drift(
-        source, target, numerical_feature_names, categorical_feature_names, alpha
-    )
-    print(result_per_feature.to_markdown())
-    print(f"is_drifted = {is_drifted}")
+    # source, target, numerical_feature_names, categorical_feature_names = generate_data(
+    #     seed=42,
+    #     n_source=n_source,
+    #     n_target=n_target,
+    #     n_numerical_feature=n_numerical_feature,
+    #     n_categorical_feature=n_categorical_feature,
+    #     n_category=n_category,
+    #     shift=shift,
+    # )
+    # is_drifted, result_per_feature = detect_drift(
+    #     source, target, numerical_feature_names, categorical_feature_names, alpha
+    # )
+    # print(result_per_feature.to_markdown())
+    # print(f"is_drifted = {is_drifted}")
 
     # シミュレーション
-    n_pos = 0
-    for seed in range(n_sim):
-        source, target, numerical_feature_names, categorical_feature_names = (
-            generate_data(
-                seed=seed,
-                n_source=n_source,
-                n_target=n_target,
-                n_numerical_feature=n_numerical_feature,
-                n_categorical_feature=n_categorical_feature,
-                n_category=n_category,
-                shift=shift,
+    for shift in [0.0, 0.01, 0.03, 0.05]:
+        n_pos = 0
+        for seed in tqdm(range(n_sim)):
+            source, target, numerical_feature_names, categorical_feature_names = (
+                generate_data(
+                    seed=seed,
+                    n_source=n_source,
+                    n_target=n_target,
+                    n_numerical_feature=n_numerical_feature,
+                    n_categorical_feature=n_categorical_feature,
+                    n_category=n_category,
+                    shift=shift,
+                )
             )
-        )
 
-        is_drifted, result_per_feature = detect_drift(
-            source, target, numerical_feature_names, categorical_feature_names, alpha
-        )
-        n_pos += 1 if is_drifted else 0
+            is_drifted, result_per_feature = detect_drift(
+                source,
+                target,
+                numerical_feature_names,
+                categorical_feature_names,
+                alpha,
+            )
+            n_pos += 1 if is_drifted else 0
 
-    positive_rate = n_pos / n_sim
-    print(f"positive_rate = {positive_rate}")
+        positive_rate = n_pos / n_sim
+        print(f"shift={shift}, positive_rate = {positive_rate}")
 
 
 if __name__ == "__main__":
