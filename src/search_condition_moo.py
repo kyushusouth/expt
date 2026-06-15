@@ -4,6 +4,8 @@ import numpy as np
 import optuna
 import pandas as pd
 
+NUMBER = 10
+
 np.random.seed(42)
 
 
