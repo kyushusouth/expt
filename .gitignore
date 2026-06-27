@@ -8,3 +8,10 @@ wheels/
 
 # Virtual environments
 .venv
+.env
+data/
+
+src/gemini_batch_scoring.py
+src/gemini_batch.py
+src/gpt_batch_scoring.py
+src/gpt_batch.py
