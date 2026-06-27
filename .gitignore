@@ -15,3 +15,5 @@ src/gemini_batch_scoring.py
 src/gemini_batch.py
 src/gpt_batch_scoring.py
 src/gpt_batch.py
+src/test_agent_platform.py
+test-service-account-500712-3a6271ac5f64.json
